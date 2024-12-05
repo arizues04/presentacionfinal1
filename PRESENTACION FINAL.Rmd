@@ -1,0 +1,752 @@
+---
+title: "PRESENTACIÓN"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r}
+# Cargar librerías necesarias
+library(flexdashboard)
+library(shiny)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(factoextra)
+library(rio)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(cluster)
+library(kableExtra)
+library(BBmisc)
+##LIMPIAR LA DATA
+#setwd("~/TRABAJO ESTADISTICA")
+
+data_ori=import("LA REAL REAL DATA.xlsx")
+data_ori <- data_ori %>%
+  mutate(
+   calsijud = as.numeric(calsijud),
+    i.gini = as.numeric(i.gini))
+
+names(data_ori)
+data_ok <- data_ori[complete.cases(data_ori), ]
+
+dontselect=c("paises","region","idh.2022")
+select=setdiff(names(data_ok),dontselect) 
+data_num=data_ok[,select]
+```
+
+{data-width="650"}
+-----------------------------------------------------------------------
+
+# Datos de las integrantes y proyecto
+
+```{r}
+# Mostrar los datos con formato adecuado
+
+cat("Integrantes:\n")
+cat("--> Silvana Gamarra (20222306)\n", 
+ "--> Ariana Zuazo (20222630)\n\n")
+
+cat("Curso: Estadística para el Análisis Político 2\n")
+cat("Docente: José Magallanes\n")
+cat("Jefa de práctcas: Chiara Zamora\n")
+cat("Año: 2024")
+cat("Proyecto: Cómo la calidad institucional explica el Índice de Desarrollo Humano\n")
+```
+
+
+# DICCIONARIO
+
+
+```{r}
+# Leer y mostrar la tabla de diccionario
+library(readxl)
+diccionario <- read_excel("DICCIONARIO VARIABLES REAL.xlsx", sheet = 1)
+```
+
+```{r}
+knitr::kable(diccionario, caption = "Diccionario de Variables")
+```
+
+# EXPLORANDO IDH
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### BOXPLOT
+
+```{r}
+ggplot(data_ok, aes(x = region, y = idh.2022, fill = region)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Diagrama de Caja del Índice de Desarrollo Humano (IDH) por \nContinente", 
+       x = "Continente", 
+       y = "IDH") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Mejora la legibilidad de los nombres
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### ESTADISTICOS DESCRIPTIVOS
+
+```{r}
+# Instala los paquetes necesarios si no los tienes instalados
+# install.packages("dplyr")
+# install.packages("gt")
+
+# Carga los paquetes
+library(dplyr)
+library(gt)
+
+# Agrupa los datos por región y calcula el resumen estadístico del IDH 2022
+tabla1 <- data_ok |> 
+  group_by(region) |> 
+  summarise(
+    Promedio = mean(idh.2022, na.rm = TRUE),
+    Mediana = median(idh.2022, na.rm = TRUE),
+    Mínimo = min(idh.2022, na.rm = TRUE),
+    Máximo = max(idh.2022, na.rm = TRUE),
+    Desviación_Estándar = sd(idh.2022, na.rm = TRUE)
+  ) |> 
+  gt() |> 
+  tab_header(
+    title = "Resumen del IDH 2022 por Región",
+    subtitle = "Promedio, mediana, y otros indicadores"
+  ) |> 
+  fmt_number(
+    columns = where(is.numeric),
+    decimals = 2
+  ) |> 
+  cols_label(
+    Promedio = "Promedio IDH",
+    Mediana = "Mediana IDH",
+    Mínimo = "IDH Mínimo",
+    Máximo = "IDH Máximo",
+    Desviación_Estándar = "Desv. Estándar"
+  )
+
+# Muestra la tabla
+tabla1
+```
+
+> COMENTARIO
+El gráfico muestra que Europa y Oceanía tienen los valores de IDH más altos y menos dispersos, indicando un desarrollo humano consistentemente elevado en estas regiones. África, por otro lado, presenta los valores más bajos y mayor dispersión, lo que sugiere desigualdades significativas en su desarrollo humano. América y Asia se encuentran en posiciones intermedias, con una mediana de IDH más alta en América, aunque con una menor dispersión en Asia.
+
+# MATRIZ DE CORRELACION
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### CORRELACION SIN LOS RANGOS INVERTIDOS
+
+```{r}
+# Selección de variables numéricas para el análisis de correlación
+cor_data_ok <- data_ok %>%
+  select(calsijud, i.democracia, gob.calidad, i.criminalidad, ipc.2022, PBI.2022, i.gini, i.caphumano)
+
+# Matriz de correlación y mapa de calor
+cor_matrix <- cor(cor_data_ok, use = "complete.obs")
+corrplot(cor_matrix, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+```
+
+> COMENTARIO: 
+Se observa que la calidad del sistema judicial, la democracia y la calidad del gobierno tienen correlaciones positivas fuertes entre sí, sugiriendo que estos factores están estrechamente relacionados. Por otro lado, el índice de criminalidad y el índice de Gini tienen correlaciones negativas con variables como la democracia y la calidad del gobierno, indicando que mayores niveles de criminalidad o desigualdad tienden a estar asociados con peores indicadores de gobernanza.
+Sin embargo, al realizar este gráfico notamos que había variables a las que debíamos cambiarle el sentido, pues a mayor puntaje significaba que era una amenaza al IDH y no que contribuía o hacía que este Índice mejore. Por lo que las revertimos para luego sí hacer el gráfico funcional
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### CORRELACION CON LOS RANGOS INVERTIDOS
+
+```{r}
+library(reshape2) # Para transformar la matriz en un formato utilizable
+library(ggcorrplot)
+##cambiando rango de i.gini
+data_num$i.gini = max(data_num$i.gini) - data_num$i.gini + min(data_num$i.gini)
+##cambiando ragno de i.criminalidad
+data_num$i.criminalidad = max(data_num$i.criminalidad) - data_num$i.criminalidad + min(data_num$i.criminalidad)
+library(polycor)
+corMatrix=polycor::hetcor(data_num)$correlations
+cor_data <- melt(corMatrix)
+
+ggplot(cor_data, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  geom_text(aes(label = round(value, 2)), size = 3) + # Agrega las etiquetas con 2 decimales
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_blank()) +
+  labs(fill = "Correlación")
+```
+
+> COMENTARIO:
+Una vez hemos revertido los valores, nos damos cuenta que el Índice de criminalidad (i.criminalidad) no muestra correlaciones significativas con las demás variables. Esto sugiere que la criminalidad podría responder factores específicos, posiblemente relacionados con contextos sociales o culturales, los cuales no están incluidos en esta matriz. Por lo tanto, esto demuestra la necesidad de no incorporar esta variable para comprender mejor los resultados.
+De igual manera, el Índice de Gini, no presenta correlaciones significativas con la mayoría de las variables de la matriz. La correlación con el Índice de democracia es relativamente débil, lo que sugiere que no hay una correlación clara entre la desigualdad económica y el nivel de democracia en cada caso. De la misma manera, el Índice de Gini presenta correlaciones bajas con el Índice de Capital Humano (i.caphumano) y la calidad de gobierno (gob.calidad).
+
+# IDH Y CADA VARIABLE
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### PRUEBAS DE SIGNIFICANCIA
+
+```{r}
+# Calcular correlación entre IDH y otras variables
+idh_correlations <- cor_data_ok %>%
+  summarise(across(.fns = ~cor(., data_ok$idh.2022, use = "complete.obs")))
+
+# Visualización de la tabla de correlaciones
+knitr::kable(idh_correlations, caption = "Correlación del IDH con Otras Variables")
+```
+
+```{r}
+# Ajuste de regresión
+modelo_regresion <- lm(idh.2022 ~ calsijud + i.democracia + gob.calidad + 
+                        i.criminalidad + ipc.2022 + PBI.2022 + i.gini + i.caphumano, 
+                        data = data_ok )
+
+# Extraer los coeficientes del modelo
+summary_model <- summary(modelo_regresion)
+coeficientes <- summary_model$coefficients
+
+# Convertir a una tabla bonita con kable
+knitr::kable(coeficientes, 
+             col.names = c("Estimates", "Std. Error", "t Value", "Pr(>|t|)"),
+             caption = "Coeficientes del Modelo de Regresión",
+             format = "markdown")
+```
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### SIST. JUDICIAL
+
+```{r}
+p1 <- ggplot(data_ok, aes(x = calsijud, y = idh.2022)) +
+  geom_point(color = "purple3") +
+  geom_smooth(method = "lm", color = "blue4") +
+  labs(title = "Relación entre IDH y Calidad del Sistema Judicial",
+       x = "Calidad del Sistema Judicial",
+       y = "IDH") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave("grafico_calsijud.png", plot = p1, width = 12, height = 10, dpi = 300)
+p1
+```
+
+### DEMOCRACIA
+
+```{r}
+p2 <- ggplot(data_ok, aes(x = i.democracia, y = idh.2022)) +
+  geom_point(color = "purple3") +
+  geom_smooth(method = "lm", color = "blue4") +
+  labs(title = "Relación entre IDH y Índice de Democracia",
+       x = "Índice de Democracia",
+       y = "IDH") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave("grafico_i_democracia.png", plot = p2, width = 12, height = 10, dpi = 300)
+p2
+```
+
+### CAL. GOBIERNO
+
+```{r}
+p3 <- ggplot(data_ok, aes(x = gob.calidad, y = idh.2022)) +
+  geom_point(color = "purple3") +
+  geom_smooth(method = "lm", color = "blue4") +
+  labs(title = "Relación entre IDH y Calidad de Gobierno",
+       x = "Calidad de Gobierno",
+       y = "IDH") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave("grafico_gob_calidad.png", plot = p3, width = 12, height = 10, dpi = 300)
+p3
+```
+
+### CORRUPCIÓN
+
+```{r}
+p4 <- ggplot(data_ok, aes(x = ipc.2022, y = idh.2022)) +
+  geom_point(color = "purple3") +
+  geom_smooth(method = "lm", color = "blue4") +
+  labs(title = "Relación entre IDH y Índice de Percepción de Corrupción",
+       x = "Índice de Percepción de Corrupción",
+       y = "IDH") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave("grafico_ipc_2022.png", plot = p4, width = 12, height = 10, dpi = 300)
+p4
+```
+
+### PBI
+
+```{r}
+p5 <- ggplot(data_ok, aes(x = PBI.2022, y = idh.2022)) +
+  geom_point(color = "purple3") +
+  geom_smooth(method = "lm", color = "blue4") +
+  labs(title = "Relación entre IDH y PBI 2022",
+       x = "PBI 2022",
+       y = "IDH") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave("grafico_pbi_2022.png", plot = p5, width = 12, height = 10, dpi = 300)
+p5
+```
+
+### CAPITAL HUMANO
+
+```{r}
+p6 <- ggplot(data_ok, aes(x = i.caphumano, y = idh.2022)) +
+  geom_point(color = "purple3") +
+  geom_smooth(method = "lm", color = "blue4") +
+  labs(title = "Relación entre IDH y Índice de Capital Humano",
+       x = "Índice de Capital Humano",
+       y = "IDH") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave("grafico_i_caphumano.png", plot = p6, width = 12, height = 10, dpi = 300)
+p6
+```
+
+# REGRESION LINEAL
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### REGRESION LINEAL MULTIPLE
+
+```{r}
+library(knitr)
+library(modelsummary)
+
+h1=formula(idh.2022~i.democracia+ipc.2022+i.caphumano+calsijud+PBI.2022+gob.calidad)
+
+rl1=lm(h1, data = data_ok)
+
+model1=list('OLS asegurados (I)'=rl1)
+modelsummary(model1, title = "Resumen de Regresion Lineal",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+### ESTANDARIZADO
+
+```{r}
+modelo5=formula(idh.2022~scale(i.democracia)+scale(i.caphumano)+scale(gob.calidad)+scale(calsijud)+scale(ipc.2022)+scale(PBI.2022))
+reg1=lm(modelo5,data=data_ok)
+```
+
+```{r}
+models=list('IDH (I)'=reg1)
+library(modelsummary)
+modelsummary(models, title = "Resultados de todos los modelos estansarizados",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+### GRAFICO COMPARATIVO
+
+```{r}
+library(ggplot2)
+library(sjPlot)
+
+
+plot_models(rl1, reg1,vline.color = "black",m.labels=c("Modelo 1", "Modelo 1 estandarizado"),dot.size = 1,line.size = 0.6)
+```
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### LINEALIDAD
+
+```{r}
+par(mfrow = c(1, 1))
+plot(rl1, 1, caption = ''); title(main = "Linealidad")
+```
+
+### NORMALIDAD
+
+```{r}
+plot(rl1, 2, caption = '');title(main="Normalidad")
+```
+
+### HOMOCEDASTICIDAD
+
+```{r}
+plot(rl1, 3, caption = '');title(main="Homocedasticidad")
+```
+
+### INFLUYENTES
+
+```{r}
+plot(rl1, 5, caption = '');title(main="Influyentes")
+```
+
+### MULTICOLINEALIDAD
+
+```{r}
+library(DescTools)
+library(kableExtra)
+# > 5 es problematico
+VIF(rl1) |> 
+  kable(col.names = "VIF",caption ="Evaluando Multicolinealidad usando VIF (Variance Inflation Factors)" ) |> 
+  kable_styling(full_width = F)
+```
+
+# FACTORIAL
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### RECORDEMOS...
+
+```{r}
+library(reshape2) # Para transformar la matriz en un formato utilizable
+library(ggcorrplot)
+##cambiando rango de i.gini
+data_num$i.gini = max(data_num$i.gini) - data_num$i.gini + min(data_num$i.gini)
+##cambiando ragno de i.criminalidad
+data_num$i.criminalidad = max(data_num$i.criminalidad) - data_num$i.criminalidad + min(data_num$i.criminalidad)
+library(polycor)
+corMatrix=polycor::hetcor(data_num)$correlations
+cor_data <- melt(corMatrix)
+
+ggplot(cor_data, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  geom_text(aes(label = round(value, 2)), size = 3) + # Agrega las etiquetas con 2 decimales
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_blank()) +
+  labs(fill = "Correlación")
+```
+
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### PASO 01: VERIFICAR DATOS
+
+```{r}
+library(psych)
+library(polycor)
+
+# Calcular la matriz de correlaciones policóricas
+corMatrix <- polycor::hetcor(data_num)$correlations
+
+# Evaluar KMO
+kmo_result <- psych::KMO(corMatrix)
+print(kmo_result)
+```
+
+### PASO 02: VERIFICAR MATRIZ
+
+DOS PRUEBAS: (EN AMBOS TIENEN QUE SALIR FALSE)
+
+**MATRIZ IDENTIDAD:**
+
+```{r}
+cortest.bartlett(corMatrix,n=nrow(data_num))$p.value>0.05
+```
+
+**MATRIZ SINGULAR:**
+
+```{r}
+## install.packages("matrixcalc")
+library(matrixcalc)
+
+is.singular.matrix(corMatrix)
+```
+
+### DETERMINAR # DE FACTORES
+
+```{r}
+fa.parallel(data_num, fa = 'fa',correct = T,plot = F)
+```
+
+SE SUGIERE 1
+
+### REDIMENSIONAR
+
+```{r echo=FALSE}
+##install.packages("GPArotation")
+library(GPArotation)
+resfa <- fa(data_num,
+            nfactors = 1,
+            cor = 'mixed',
+            rotate = "varimax", #oblimin?
+            fm="minres")
+print(resfa$loadings)
+```
+
+```{r echo=FALSE}
+print(resfa$loadings,cutoff = 0.5)
+```
+
+### RESULTADO VISUAL
+
+```{r}
+fa.diagram(resfa,main = "Resultados del EFA")
+```
+
+> COMENTARIO:
+Las variables como IPC; gobierno de calidad; índice de capital humano, PBI e índice de democracia muestran coeficientes de carga altos, lo que sugiere que estas variables están fuertemente relacionadas con el IDH y podrían ser consideradas como sus indicadores clave. Por otro lado, la variables como el índice de criminalidad y el de Gini, presenta, un coeficiente de carga bajo, lo que indica una relación más débil, por lo que estas variables no deberían ser consideradas para los análisis o en todo caso deberían ser eliminadas.
+
+# CLUSTER
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### CANTIDAD DE CLUSTERS (PAM)
+
+```{r}
+data_tipificada <- as.data.frame(scale(data_num [,c(2, 3, 4, 5, 7, 8)]))
+dataClus=data_tipificada
+row.names(dataClus)=data_ok$paises
+```
+
+```{r}
+library(cluster)
+g.dist = daisy(dataClus, metric="gower")
+```
+
+```{r}
+library(factoextra)
+fviz_nbclust(dataClus, pam,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F)
+```
+
+### EVALUACION PAM
+
+```{r}
+library(kableExtra)
+library(cluster)
+set.seed(123)
+res.pam=pam(g.dist,7,cluster.only = F)
+```
+
+```{r}
+fviz_silhouette(res.pam,print.summary = F)
+```
+
+> COMENTARIO:
+Esta NO es la mejor opción(0.31) este gráfico se evalúa la calidad del agrupamiento en siete clusters. Cada barra representa un elemento dentro de un cluster (es decir los países), con los colores diferenciando los grupos. Podemos observar que la mayoría de los elementos están correctamente asignados a sus clusters. Sin embargo, hay casos particulares en el cluster 4 y 5, correspondiente a Botswana, Mali, Niger, Rwanda, etc (con valores negativos) lo que sugiere que está mal agrupado en comparación con el resto.
+
+### GRAFICO PAM
+
+```{r}
+silPAM=data.frame(res.pam$silinfo$widths)
+silPAM$paises=row.names(silPAM)
+poorPAM=silPAM[silPAM$sil_width<0,'paises']%>%sort()
+poorPAM
+```
+
+```{r echo=FALSE}
+dataClus$pam=res.pam$cluster
+```
+
+```{r echo=FALSE}
+data_ok$pamIDHpoor=data_ok$paises%in%poorPAM
+data_ok$pamIDH=as.ordered(dataClus$pam)
+dataClus$pam=NULL
+```
+
+```{r echo=FALSE}
+proyeccion = cmdscale(g.dist, k=2,add = T)
+```
+
+```{r echo=FALSE}
+data_ok$dim1 <- proyeccion$points[,1] #fila uno
+data_ok$dim2 <- proyeccion$points[,2] #fila dos
+```
+
+```{r}
+library(ggrepel)
+# solo paises mal clusterizados
+PAMlabels=ifelse(data_ok$pamIDHpoor,data_ok$paises,'')
+
+#base
+base= ggplot(data_ok,aes(x=dim1, y=dim2))  +
+    scale_color_brewer(type = 'qual',palette ='Dark2'  ) + labs(subtitle = "Se destacan los países mal clusterizados")
+
+pamPlot=base + geom_point(size=3, 
+                          aes(color=pamIDH))  + 
+        labs(title = "PAM") 
+# hacer notorios los paises mal clusterizados
+pamPlot + geom_text_repel(size=4,
+                          aes(label=PAMlabels),
+                          max.overlaps = 50,
+                          min.segment.length = unit(0, 'lines'))
+```
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### CANTIDAD DE CLUSTERS (AGNES)
+
+```{r}
+fviz_nbclust(dataClus, hcut,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F,hc_func = "agnes")
+```
+
+### DENDOGRAMA
+
+```{r}
+set.seed(123)
+library(factoextra)
+
+res.agnes<- hcut(g.dist, k = 4,hc_func='agnes',hc_method = "ward.D")
+```
+
+```{r}
+fviz_dend(res.agnes, cex = 0.7, horiz = T,main = "")
+```
+
+### EVALUACION AGNES
+
+```{r}
+fviz_silhouette(res.agnes,print.summary = F)
+```
+
+> COMENTARIO:
+Esta NO es la mejor opción(0.39) este gráfico se evalúa la calidad del agrupamiento en cuatro clusters. Las barras más altas indican mejor cohesión y separación en el agrupamiento. Podemos observar que la mayoría de los elementos están correctamente asignados a sus clusters. Sin embargo, hay casos particulares en el cluster 1, correspondiente a Malaysia, Mauritius, Qatar, etc (con valores negativos) lo que sugiere que está mal agrupado en comparación con el resto.
+
+### GRÁFICO AGNES
+
+```{r}
+silAGNES=data.frame(res.agnes$silinfo$widths)
+silAGNES$paises=row.names(silAGNES)
+poorAGNES=silAGNES[silAGNES$sil_width<0,'paises']%>%sort()
+poorAGNES
+```
+
+```{r}
+dataClus$agnes=res.agnes$cluster
+```
+
+```{r}
+data_ok$agnesIDHpoor=data_ok$paises%in%poorAGNES
+data_ok$agnesIDH=as.ordered(dataClus$agnes)
+dataClus$agnes=NULL
+```
+
+```{r}
+# solo paises mal clusterizados
+AGNESlabels=ifelse(data_ok$agnesIDHpoor,data_ok$paises,'')
+
+#base
+base= ggplot(data_ok,aes(x=dim1, y=dim2))  +
+    scale_color_brewer(type = 'qual',palette ='Dark2'  ) + labs(subtitle = "Se destacan los países mal clusterizados")
+agnesPlot=base + geom_point(size=3, 
+                            aes(color=as.factor(agnesIDH))) +
+          labs(title = "AGNES") 
+# hacer notorios los paises mal clusterizados
+agnesPlot + geom_text_repel(size=4,
+                            aes(label=AGNESlabels),
+                            max.overlaps = 50,
+                            min.segment.length = unit(0, 'lines'))
+```
+
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### CANTIDAD DE CLUSTERS (DIANA)
+
+```{r}
+fviz_nbclust(dataClus, hcut,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F,hc_func = "diana")
+```
+
+### DENDOGRAMA
+
+```{r}
+set.seed(123)
+res.diana <- hcut(g.dist, k = 5,hc_func='diana')
+```
+
+```{r}
+fviz_dend(res.diana, cex = 0.7, horiz = T, main = "")
+```
+
+### EVALUACION DIANA
+
+```{r}
+fviz_silhouette(res.diana,print.summary = F)
+```
+
+> COMENTARIO:
+Esta es la mejor opción(0.41) este gráfico se evalúa la calidad del agrupamiento en cinco clusters. Cada barra representa un elemento dentro de un cluster (es decir los países), con los colores diferenciando los grupos. Podemos observar que la mayoría de los elementos están correctamente asignados a sus clusters. Sin embargo, hay un caso particular en el cluster 1 (color rojo), correspondiente a Botswana, con un valor negativo, lo que sugiere que está mal agrupado en comparación con el resto.
+
+### GRAFICO DIANA
+
+```{r}
+silDIANA=data.frame(res.diana$silinfo$widths)
+silDIANA$paises=row.names(silDIANA)
+poorDIANA=silDIANA[silDIANA$sil_width<0,'paises']%>%sort()
+poorDIANA
+```
+
+```{r}
+dataClus$diana=res.diana$cluster
+```
+
+```{r}
+data_ok$dianaIDHpoor=data_ok$paises%in%poorDIANA
+data_ok$dianaIDH=as.ordered(dataClus$diana)
+dataClus$diana=NULL
+```
+
+```{r}
+# solo paises mal clusterizados
+DIANAlabels=ifelse(data_ok$dianaIDHpoor,data_ok$paises,'')
+
+#base
+base= ggplot(data_ok,aes(x=dim1, y=dim2))  +
+    scale_color_brewer(type = 'qual',palette ='Dark2'  ) + labs(subtitle = "Se destacan los países mal clusterizados")
+dianaPlot=base + geom_point(size=3,
+                            aes(color=dianaIDH)) + 
+          labs(title = "DIANA")
+
+# hacer notorios los paises mal clusterizados
+dianaPlot + geom_text_repel(size=4,
+                            aes(label=DIANAlabels), 
+                            max.overlaps = 50,
+                            min.segment.length = unit(0, 'lines'))
+```
